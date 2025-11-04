@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Verification - Blockchain</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+        
+        h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        input[type="file"],
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+            width: 100%;
+        }
+        
+        .file-input-wrapper input[type="file"] {
+            position: absolute;
+            left: -9999px;
+        }
+        
+        .file-input-label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+            background: #f8f9fa;
+            border: 2px dashed #667eea;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .file-input-label:hover {
+            background: #e9ecef;
+            border-color: #764ba2;
+        }
+        
+        .file-name {
+            margin-top: 8px;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            font-weight: 600;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .btn-download {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            margin-top: 15px;
+            display: inline-block;
+            text-decoration: none;
+            padding: 12px 30px;
+        }
+        
+        .btn-download:hover {
+            box-shadow: 0 5px 15px rgba(40, 167, 69, 0.4);
+        }
+        
+        .result {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 8px;
+            display: none;
+        }
+        
+        .result.success {
+            background: #d4edda;
+            border: 2px solid #c3e6cb;
+            color: #155724;
+        }
+        
+        .result.error {
+            background: #f8d7da;
+            border: 2px solid #f5c6cb;
+            color: #721c24;
+        }
+        
+        .result-item {
+            margin: 10px 0;
+            word-break: break-all;
+            line-height: 1.6;
+        }
+        
+        .result-item strong {
+            display: inline-block;
+            min-width: 180px;
+            color: #000;
+        }
+        
+        .cert-number {
+            background: #fff;
+            padding: 15px;
+            border-radius: 5px;
+            border: 2px dashed #28a745;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 18px;
+            font-weight: bold;
+            text-align: center;
+            color: #28a745;
+        }
+        
+        .hash-value {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            margin: 10px 0;
+            word-break: break-all;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            color: #666;
+            font-weight: 500;
+            transition: all 0.3s;
+            border-bottom: 3px solid transparent;
+        }
+        
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        
+        .info-box h3 {
+            color: #1976D2;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+        
+        .info-box p {
+            color: #555;
+            line-height: 1.6;
+            margin: 5px 0;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        
+        .badge.valid {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .badge.invalid {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .download-section {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f0f8ff;
+            border-radius: 5px;
+            border: 2px solid #28a745;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📄 Blockchain Document Verification</h1>
+        
+        <!-- Upload Section -->
+        <div class="card">
+            <h2>🔒 Upload & Certify Document</h2>
+            
+            <div class="info-box">
+                <h3>How it works:</h3>
+                <p>1. Upload your document (PDF, Image, or Text)</p>
+                <p>2. System generates a unique certificate number and document hash</p>
+                <p>3. Information is stored on blockchain (immutable & secure)</p>
+                <p>4. Download the certified document with certificate number watermarked on it</p>
+            </div>
+            
+            <form id="uploadForm">
+                <div class="form-group">
+                    <label for="documentFile">Select Document (PDF, PNG, JPG, TXT):</label>
+                    <div class="file-input-wrapper">
+                        <input type="file" id="documentFile" accept=".pdf,.png,.jpg,.jpeg,.txt" required>
+                        <label for="documentFile" class="file-input-label">
+                            📎 Click to select file or drag & drop
+                        </label>
+                    </div>
+                    <div class="file-name" id="fileName"></div>
+                </div>
+                <button type="submit" id="uploadBtn">Upload & Certify Document</button>
+                
+                <div class="loading" id="uploadLoading">
+                    <div class="spinner"></div>
+                    <p>Processing and registering on blockchain...</p>
+                </div>
+                
+                <div class="result" id="uploadResult"></div>
+            </form>
+        </div>
+        
+        <!-- Verify Section -->
+        <div class="card">
+            <h2>✅ Verify Document</h2>
+            
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('hash')">Verify by Hash</button>
+                <button class="tab" onclick="switchTab('upload')">Verify by Upload</button>
+            </div>
+            
+            <!-- Verify by Hash -->
+            <div id="hashTab" class="tab-content active">
+                <div class="info-box">
+                    <h3>Verify using Certificate Number & Hash:</h3>
+                    <p>Enter the certificate number and document hash to verify authenticity on blockchain</p>
+                </div>
+                
+                <form id="verifyForm">
+                    <div class="form-group">
+                        <label for="certNumber">Certificate Number:</label>
+                        <input type="text" id="certNumber" placeholder="CERT-12345678-9999" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="docHash">Document Hash:</label>
+                        <input type="text" id="docHash" placeholder="Enter document hash" required>
+                    </div>
+                    <button type="submit" id="verifyBtn">Verify Document</button>
+                    
+                    <div class="loading" id="verifyLoading">
+                        <div class="spinner"></div>
+                        <p>Verifying on blockchain...</p>
+                    </div>
+                    
+                    <div class="result" id="verifyResult"></div>
+                </form>
+            </div>
+            
+            <!-- Verify by Upload -->
+            <div id="uploadTab" class="tab-content">
+                <div class="info-box">
+                    <h3>Verify by uploading document:</h3>
+                    <p>Upload the original document and provide certificate number to verify</p>
+                </div>
+                
+                <form id="verifyUploadForm">
+                    <div class="form-group">
+                        <label for="verifyCertNumber">Certificate Number:</label>
+                        <input type="text" id="verifyCertNumber" placeholder="CERT-12345678-9999" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="verifyDocumentFile">Upload Document:</label>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="verifyDocumentFile" required>
+                            <label for="verifyDocumentFile" class="file-input-label">
+                                📎 Click to select file
+                            </label>
+                        </div>
+                        <div class="file-name" id="verifyFileName"></div>
+                    </div>
+                    <button type="submit" id="verifyUploadBtn">Verify Document</button>
+                    
+                    <div class="loading" id="verifyUploadLoading">
+                        <div class="spinner"></div>
+                        <p>Verifying on blockchain...</p>
+                    </div>
+                    
+                    <div class="result" id="verifyUploadResult"></div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_URL = 'http://localhost:3000/api';
+
+        // File input display
+        document.getElementById('documentFile').addEventListener('change', function(e) {
+            const fileName = e.target.files[0]?.name || '';
+            document.getElementById('fileName').textContent = fileName ? `Selected: ${fileName}` : '';
+        });
+
+        document.getElementById('verifyDocumentFile').addEventListener('change', function(e) {
+            const fileName = e.target.files[0]?.name || '';
+            document.getElementById('verifyFileName').textContent = fileName ? `Selected: ${fileName}` : '';
+        });
+
+        // Switch tabs
+        function switchTab(tab) {
+            const tabs = document.querySelectorAll('.tab');
+            const contents = document.querySelectorAll('.tab-content');
+            
+            tabs.forEach(t => t.classList.remove('active'));
+            contents.forEach(c => c.classList.remove('active'));
+            
+            if (tab === 'hash') {
+                tabs[0].classList.add('active');
+                document.getElementById('hashTab').classList.add('active');
+            } else {
+                tabs[1].classList.add('active');
+                document.getElementById('uploadTab').classList.add('active');
+            }
+        }
+
+        // Function to trigger download
+        function downloadFile(url, filename) {
+            console.log('Downloading:', url);
+            
+            // Create a temporary anchor element
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            link.style.display = 'none';
+            
+            document.body.appendChild(link);
+            link.click();
+            
+            // Clean up
+            setTimeout(() => {
+                document.body.removeChild(link);
+            }, 100);
+        }
+
+        // Upload Form Handler
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const fileInput = document.getElementById('documentFile');
+            const uploadBtn = document.getElementById('uploadBtn');
+            const loading = document.getElementById('uploadLoading');
+            const result = document.getElementById('uploadResult');
+            
+            if (!fileInput.files[0]) {
+                showResult(result, 'Please select a file', 'error');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('document', fileInput.files[0]);
+            
+            uploadBtn.disabled = true;
+            loading.style.display = 'block';
+            result.style.display = 'none';
+            
+            try {
+                const response = await fetch(`${API_URL}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    const downloadBtn = `
+                        <div class="download-section">
+                            <h3 style="color: #28a745; margin-bottom: 10px;">✓ Certificate Ready for Download</h3>
+                            <button type="button" class="btn-download" onclick="downloadFile('${data.downloadUrl}', '${data.certifiedFileName}')">
+                                📥 Download Certified Document
+                            </button>
+                            <p style="margin-top: 10px; font-size: 12px; color: #666;">
+                                File: ${data.certifiedFileName}
+                            </p>
+                        </div>
+                    `;
+                    
+                    showResult(result, `
+                        <div class="result-item"><strong>✓ Success!</strong> ${data.message}</div>
+                        <div class="cert-number">🎫 ${data.certificateNumber}</div>
+                        <div class="result-item"><strong>Document Hash:</strong></div>
+                        <div class="hash-value">${data.documentHash}</div>
+                        <div class="result-item"><strong>Original File:</strong> ${data.fileName}</div>
+                        <div class="result-item"><strong>File Size:</strong> ${(data.fileSize / 1024).toFixed(2)} KB</div>
+                        <div class="result-item"><strong>Transaction Hash:</strong> ${data.txHash}</div>
+                        ${downloadBtn}
+                    `, 'success');
+                    
+                    fileInput.value = '';
+                    document.getElementById('fileName').textContent = '';
+                } else {
+                    showResult(result, `Error: ${data.error || 'Upload failed'}`, 'error');
+                }
+            } catch (error) {
+                showResult(result, `Error: ${error.message}`, 'error');
+            } finally {
+                uploadBtn.disabled = false;
+                loading.style.display = 'none';
+            }
+        });
+
+        // Verify Form Handler (by Hash)
+        document.getElementById('verifyForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const certNumber = document.getElementById('certNumber').value.trim();
+            const docHash = document.getElementById('docHash').value.trim();
+            const verifyBtn = document.getElementById('verifyBtn');
+            const loading = document.getElementById('verifyLoading');
+            const result = document.getElementById('verifyResult');
+            
+            verifyBtn.disabled = true;
+            loading.style.display = 'block';
+            result.style.display = 'none';
+            
+            try {
+                const response = await fetch(`${API_URL}/verify`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        certificateNumber: certNumber,
+                        documentHash: docHash
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    const resultClass = data.isValid ? 'success' : 'error';
+                    const icon = data.isValid ? '✓' : '✗';
+                    const badge = data.isValid ? 
+                        '<span class="badge valid">VALID</span>' : 
+                        '<span class="badge invalid">INVALID</span>';
+                    
+                    showResult(result, `
+                        <div class="result-item"><strong>${icon} Verification Result:</strong>${badge}</div>
+                        <div class="result-item"><strong>${data.message}</strong></div>
+                        <div class="cert-number">${data.certificateNumber}</div>
+                        <div class="result-item"><strong>Registered Hash:</strong></div>
+                        <div class="hash-value">${data.registeredHash}</div>
+                        <div class="result-item"><strong>Provided Hash:</strong></div>
+                        <div class="hash-value">${data.providedHash}</div>
+                        <div class="result-item"><strong>Registration Date:</strong> ${data.registrationDate}</div>
+                    `, resultClass);
+                } else {
+                    showResult(result, `Error: ${data.error || 'Verification failed'}`, 'error');
+                }
+            } catch (error) {
+                showResult(result, `Error: ${error.message}`, 'error');
+            } finally {
+                verifyBtn.disabled = false;
+                loading.style.display = 'none';
+            }
+        });
+
+        // Verify Upload Form Handler
+        document.getElementById('verifyUploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const certNumber = document.getElementById('verifyCertNumber').value.trim();
+            const fileInput = document.getElementById('verifyDocumentFile');
+            const verifyBtn = document.getElementById('verifyUploadBtn');
+            const loading = document.getElementById('verifyUploadLoading');
+            const result = document.getElementById('verifyUploadResult');
+            
+            if (!fileInput.files[0]) {
+                showResult(result, 'Please select a file', 'error');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('document', fileInput.files[0]);
+            formData.append('certificateNumber', certNumber);
+            
+            verifyBtn.disabled = true;
+            loading.style.display = 'block';
+            result.style.display = 'none';
+            
+            try {
+                const response = await fetch(`${API_URL}/verify-upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    const resultClass = data.isValid ? 'success' : 'error';
+                    const icon = data.isValid ? '✓' : '✗';
+                    const badge = data.isValid ? 
+                        '<span class="badge valid">VALID</span>' : 
+                        '<span class="badge invalid">INVALID</span>';
+                    
+                    showResult(result, `
+                        <div class="result-item"><strong>${icon} Verification Result:</strong>${badge}</div>
+                        <div class="result-item"><strong>${data.message}</strong></div>
+                        <div class="cert-number">${data.certificateNumber}</div>
+                        <div class="result-item"><strong>Registered Hash:</strong></div>
+                        <div class="hash-value">${data.registeredHash}</div>
+                        <div class="result-item"><strong>Uploaded Document Hash:</strong></div>
+                        <div class="hash-value">${data.providedHash}</div>
+                        <div class="result-item"><strong>Registration Date:</strong> ${data.registrationDate}</div>
+                    `, resultClass);
+                    
+                    fileInput.value = '';
+                    document.getElementById('verifyFileName').textContent = '';
+                } else {
+                    showResult(result, `Error: ${data.error || 'Verification failed'}`, 'error');
+                }
+            } catch (error) {
+                showResult(result, `Error: ${error.message}`, 'error');
+            } finally {
+                verifyBtn.disabled = false;
+                loading.style.display = 'none';
+            }
+        });
+
+        function showResult(element, message, type) {
+            element.innerHTML = message;
+            element.className = `result ${type}`;
+            element.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
