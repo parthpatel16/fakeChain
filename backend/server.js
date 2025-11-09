@@ -4,8 +4,12 @@ const cors = require('cors');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { PDFDocument, rgb, StandardFonts, degrees } = require('pdf-lib');
+const QRCode = require('qrcode');
+const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const blockchainService = require('./blockchain');
+const { exec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
 
 const app = express();
 const PORT = 3000;
@@ -15,37 +19,22 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-// IMPORTANT: Serve certified documents with proper headers
-app.use('/certified-documents', express.static(path.join(__dirname, 'certified-documents'), {
-  setHeaders: (res, filePath) => {
-    // Force download instead of displaying in browser
-    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(filePath)}"`);
-    res.setHeader('Content-Type', 'application/pdf');
-  }
-}));
-
-// Create directories if they don't exist
+// Create directories
 const uploadsDir = path.join(__dirname, 'uploads');
 const certifiedDir = path.join(__dirname, 'certified-documents');
+const qrDir = path.join(__dirname, 'qr-codes');
+const tempDir = path.join(__dirname, 'temp');
 
-console.log('Creating directories...');
-console.log('Uploads dir:', uploadsDir);
-console.log('Certified dir:', certifiedDir);
-
-[uploadsDir, certifiedDir].forEach(dir => {
+[uploadsDir, certifiedDir, qrDir, tempDir].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
-    console.log(`✓ Created directory: ${dir}`);
-  } else {
-    console.log(`✓ Directory exists: ${dir}`);
+    console.log(`✓ Created: ${dir}`);
   }
 });
 
-// Configure multer for file uploads
+// Configure multer
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
+  destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => {
     const uniqueName = Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname);
     cb(null, uniqueName);
@@ -54,20 +43,15 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
   storage: storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowedTypes = /pdf|png|jpg|jpeg|txt/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    
-    if (extname) {
-      return cb(null, true);
-    } else {
-      cb(new Error('Only PDF, PNG, JPG, JPEG, and TXT files are allowed'));
-    }
+    if (extname) return cb(null, true);
+    cb(new Error('Only PDF, PNG, JPG, JPEG, and TXT files allowed'));
   }
 });
 
-// Generate random certificate number
 function generateCertificateNumber() {
   const prefix = 'CERT';
   const timestamp = Date.now().toString().slice(-8);
@@ -75,7 +59,6 @@ function generateCertificateNumber() {
   return `${prefix}-${timestamp}-${random}`;
 }
 
-// Generate hash for document
 function generateDocumentHash(filePath) {
   const fileBuffer = fs.readFileSync(filePath);
   const hashSum = crypto.createHash('sha256');
@@ -83,137 +66,169 @@ function generateDocumentHash(filePath) {
   return hashSum.digest('hex');
 }
 
-// Add certificate and watermark to PDF
-async function addCertificateToPDF(inputPath, outputPath, certificateNumber, documentHash) {
+// Generate QR Code as buffer and save
+async function generateQRCode(certificateNumber, documentHash) {
+  try {
+    const verificationData = JSON.stringify({
+      cert: certificateNumber,
+      hash: documentHash
+    });
+    
+    const qrBuffer = await QRCode.toBuffer(verificationData, {
+      width: 100,
+      margin: 1,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF'
+      }
+    });
+    
+    // Also save QR code as file for reference
+    const qrFilePath = path.join(qrDir, `${certificateNumber}.png`);
+    fs.writeFileSync(qrFilePath, qrBuffer);
+    
+    console.log(`✓ QR Code generated for: ${certificateNumber}`);
+    return qrBuffer;
+  } catch (error) {
+    console.error('QR Code generation error:', error);
+    return null;
+  }
+}
+
+// Extract QR code data from certified PDF (reads embedded QR metadata)
+async function extractQRDataFromPDF(pdfPath) {
+  try {
+    const pdfBytes = fs.readFileSync(pdfPath);
+    const pdfDoc = await PDFDocument.load(pdfBytes);
+    
+    // Try to get custom metadata where we store QR data
+    const metadata = pdfDoc.getTitle();
+    
+    if (metadata && metadata.startsWith('QR:')) {
+      const qrData = metadata.substring(3);
+      console.log(`✓ QR data extracted from PDF metadata`);
+      return qrData;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('QR extraction error:', error);
+    return null;
+  }
+}
+
+// Add minimal certificate footer to PDF with metadata
+async function addMinimalCertificateToPDF(inputPath, outputPath, certificateNumber, documentHash) {
   try {
     console.log(`Processing PDF: ${inputPath}`);
     const existingPdfBytes = fs.readFileSync(inputPath);
     const pdfDoc = await PDFDocument.load(existingPdfBytes);
     
-    const pages = pdfDoc.getPages();
-    const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    // Store QR data in PDF metadata for extraction
+    const qrData = JSON.stringify({ cert: certificateNumber, hash: documentHash });
+    pdfDoc.setTitle(`QR:${qrData}`);
+    pdfDoc.setSubject('Blockchain Verified Certificate');
+    pdfDoc.setKeywords([certificateNumber, 'blockchain', 'verified']);
     
-    // Add certificate info and watermark to each page
-    for (let i = 0; i < pages.length; i++) {
-      const page = pages[i];
-      const { width, height } = page.getSize();
-      
-      // Certificate box dimensions (only on first page)
-      if (i === 0) {
-        const boxPadding = 50;
-        const boxHeight = 90;
-        const boxWidth = width - (boxPadding * 2);
-        const boxX = boxPadding;
-        const boxY = height - 150;
-        
-        // Draw certificate box background
-        page.drawRectangle({
-          x: boxX,
-          y: boxY,
-          width: boxWidth,
-          height: boxHeight,
-          color: rgb(1, 1, 1),
-          opacity: 0.95,
-          borderColor: rgb(0.15, 0.35, 0.7),
-          borderWidth: 2,
-        });
-        
-        // Title
-        page.drawText('BLOCKCHAIN CERTIFIED DOCUMENT', {
-          x: boxX + 15,
-          y: boxY + boxHeight - 22,
-          size: 13,
-          font: boldFont,
-          color: rgb(0.1, 0.3, 0.7),
-        });
-        
-        // Certificate Number
-        page.drawText(`Certificate No: ${certificateNumber}`, {
-          x: boxX + 15,
-          y: boxY + boxHeight - 42,
-          size: 12,
-          font: boldFont,
-          color: rgb(0, 0, 0),
-        });
-        
-        // Document Hash (truncated)
-        const hashDisplay = `Hash: ${documentHash.substring(0, 45)}...`;
-        page.drawText(hashDisplay, {
-          x: boxX + 15,
-          y: boxY + boxHeight - 60,
-          size: 8,
-          font: regularFont,
-          color: rgb(0.3, 0.3, 0.3),
-        });
-        
-        // Verification info
-        page.drawText('Verify at: http://localhost:3000 | Secured on Blockchain', {
-          x: boxX + 15,
-          y: boxY + boxHeight - 75,
-          size: 8,
-          font: regularFont,
-          color: rgb(0.4, 0.4, 0.4),
-        });
-        
-        // Timestamp
-        const timestamp = new Date().toLocaleString();
-        page.drawText(`Certified: ${timestamp}`, {
-          x: boxX + 15,
-          y: boxY + boxHeight - 88,
-          size: 7,
-          font: regularFont,
-          color: rgb(0.5, 0.5, 0.5),
-        });
-      }
-      
-      // Add diagonal watermark in center (all pages)
-      const watermarkText = `CERTIFIED • ${certificateNumber}`;
-      const watermarkSize = 35;
-      const watermarkWidth = boldFont.widthOfTextAtSize(watermarkText, watermarkSize);
-      
-      page.drawText(watermarkText, {
-        x: (width - watermarkWidth * 0.7) / 2,
-        y: height / 2,
-        size: watermarkSize,
-        font: boldFont,
-        color: rgb(0.85, 0.85, 0.85),
-        opacity: 0.3,
-        rotate: degrees(-45),
-      });
-      
-      // Add small watermark at bottom right corner
-      const cornerText = `CERT: ${certificateNumber}`;
-      const cornerSize = 8;
-      const cornerWidth = regularFont.widthOfTextAtSize(cornerText, cornerSize);
-      
-      page.drawText(cornerText, {
-        x: width - cornerWidth - 30,
-        y: 20,
-        size: cornerSize,
-        font: regularFont,
-        color: rgb(0.6, 0.6, 0.6),
-        opacity: 0.7,
-      });
+    const pages = pdfDoc.getPages();
+    const firstPage = pages[0];
+    const { width, height } = firstPage.getSize();
+    
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    
+    // Generate QR code
+    const qrBuffer = await generateQRCode(certificateNumber, documentHash);
+    if (!qrBuffer) {
+      console.error('Failed to generate QR code');
+      return false;
     }
+    
+    const qrImage = await pdfDoc.embedPng(qrBuffer);
+    
+    // Footer dimensions - minimal space
+    const qrSize = 60;
+    const footerHeight = 70;
+    const marginBottom = 15;
+    const footerY = marginBottom;
+    
+    // Draw white background for footer
+    firstPage.drawRectangle({
+      x: 0,
+      y: footerY,
+      width: width,
+      height: footerHeight,
+      color: rgb(1, 1, 1),
+      opacity: 0.95,
+    });
+    
+    // Draw QR code on left
+    const qrX = 30;
+    firstPage.drawImage(qrImage, {
+      x: qrX,
+      y: footerY + 5,
+      width: qrSize,
+      height: qrSize,
+    });
+    
+    // Text next to QR code
+    const textX = qrX + qrSize + 15;
+    const textStartY = footerY + 50;
+    
+    firstPage.drawText('BLOCKCHAIN VERIFIED CERTIFICATE', {
+      x: textX,
+      y: textStartY,
+      size: 10,
+      font: boldFont,
+      color: rgb(0.1, 0.3, 0.7),
+    });
+    
+    firstPage.drawText(`Certificate No: ${certificateNumber}`, {
+      x: textX,
+      y: textStartY - 16,
+      size: 9,
+      font: font,
+      color: rgb(0, 0, 0),
+    });
+    
+    firstPage.drawText('Upload this document to verify authenticity', {
+      x: textX,
+      y: textStartY - 30,
+      size: 7,
+      font: font,
+      color: rgb(0.4, 0.4, 0.4),
+    });
+    
+    // Add small line at top of footer
+    firstPage.drawLine({
+      start: { x: 20, y: footerY + footerHeight },
+      end: { x: width - 20, y: footerY + footerHeight },
+      thickness: 1,
+      color: rgb(0.8, 0.8, 0.8),
+    });
     
     const pdfBytes = await pdfDoc.save();
     fs.writeFileSync(outputPath, pdfBytes);
     
-    console.log(`✓ PDF certified and saved: ${outputPath}`);
-    console.log(`✓ File size: ${fs.statSync(outputPath).size} bytes`);
+    console.log(`✓ PDF certified with embedded QR data: ${outputPath}`);
     return true;
   } catch (error) {
-    console.error('Error adding certificate to PDF:', error);
+    console.error('PDF processing error:', error);
     return false;
   }
 }
 
-// Convert image to PDF with certificate and watermark
+// Convert image to PDF with minimal certificate
 async function convertImageToPDF(inputPath, outputPath, certificateNumber, documentHash) {
   try {
-    console.log(`Converting image to PDF: ${inputPath}`);
     const pdfDoc = await PDFDocument.create();
+    
+    // Store QR data in PDF metadata
+    const qrData = JSON.stringify({ cert: certificateNumber, hash: documentHash });
+    pdfDoc.setTitle(`QR:${qrData}`);
+    pdfDoc.setSubject('Blockchain Verified Certificate');
+    pdfDoc.setKeywords([certificateNumber, 'blockchain', 'verified']);
+    
     const imageBytes = fs.readFileSync(inputPath);
     
     let image;
@@ -227,91 +242,28 @@ async function convertImageToPDF(inputPath, outputPath, certificateNumber, docum
       return false;
     }
     
-    // Scale image to fit page while maintaining aspect ratio
     const maxWidth = 500;
-    const maxHeight = 600;
+    const maxHeight = 650;
     let imageWidth = image.width;
     let imageHeight = image.height;
     
     if (imageWidth > maxWidth || imageHeight > maxHeight) {
-      const widthRatio = maxWidth / imageWidth;
-      const heightRatio = maxHeight / imageHeight;
-      const ratio = Math.min(widthRatio, heightRatio);
-      imageWidth = imageWidth * ratio;
-      imageHeight = imageHeight * ratio;
+      const ratio = Math.min(maxWidth / imageWidth, maxHeight / imageHeight);
+      imageWidth *= ratio;
+      imageHeight *= ratio;
     }
     
-    // Create page with space for certificate
-    const pageWidth = Math.max(imageWidth + 100, 600);
-    const pageHeight = imageHeight + 250;
+    const footerHeight = 80;
+    const pageWidth = Math.max(imageWidth + 60, 600);
+    const pageHeight = imageHeight + footerHeight + 60;
     const page = pdfDoc.addPage([pageWidth, pageHeight]);
     
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
     
-    // Certificate box at top
-    const boxX = 50;
-    const boxY = pageHeight - 150;
-    const boxWidth = pageWidth - 100;
-    const boxHeight = 90;
-    
-    page.drawRectangle({
-      x: boxX,
-      y: boxY,
-      width: boxWidth,
-      height: boxHeight,
-      color: rgb(1, 1, 1),
-      opacity: 0.95,
-      borderColor: rgb(0.15, 0.35, 0.7),
-      borderWidth: 2,
-    });
-    
-    // Certificate content
-    page.drawText('BLOCKCHAIN CERTIFIED DOCUMENT', {
-      x: boxX + 15,
-      y: boxY + boxHeight - 22,
-      size: 13,
-      font: boldFont,
-      color: rgb(0.1, 0.3, 0.7),
-    });
-    
-    page.drawText(`Certificate No: ${certificateNumber}`, {
-      x: boxX + 15,
-      y: boxY + boxHeight - 42,
-      size: 12,
-      font: boldFont,
-      color: rgb(0, 0, 0),
-    });
-    
-    const hashDisplay = `Hash: ${documentHash.substring(0, 45)}...`;
-    page.drawText(hashDisplay, {
-      x: boxX + 15,
-      y: boxY + boxHeight - 60,
-      size: 8,
-      font: regularFont,
-      color: rgb(0.3, 0.3, 0.3),
-    });
-    
-    page.drawText('Verify at: http://localhost:3000 | Secured on Blockchain', {
-      x: boxX + 15,
-      y: boxY + boxHeight - 75,
-      size: 8,
-      font: regularFont,
-      color: rgb(0.4, 0.4, 0.4),
-    });
-    
-    const timestamp = new Date().toLocaleString();
-    page.drawText(`Certified: ${timestamp}`, {
-      x: boxX + 15,
-      y: boxY + boxHeight - 88,
-      size: 7,
-      font: regularFont,
-      color: rgb(0.5, 0.5, 0.5),
-    });
-    
-    // Draw image below certificate
+    // Draw image
     const imageX = (pageWidth - imageWidth) / 2;
-    const imageY = 40;
+    const imageY = footerHeight + 20;
     
     page.drawImage(image, {
       x: imageX,
@@ -320,29 +272,74 @@ async function convertImageToPDF(inputPath, outputPath, certificateNumber, docum
       height: imageHeight,
     });
     
-    // Watermark on image
-    const watermarkText = `CERTIFIED • ${certificateNumber}`;
-    const watermarkSize = 25;
-    const watermarkWidth = boldFont.widthOfTextAtSize(watermarkText, watermarkSize);
+    // Generate QR code
+    const qrBuffer = await generateQRCode(certificateNumber, documentHash);
+    if (!qrBuffer) return false;
     
-    page.drawText(watermarkText, {
-      x: (pageWidth - watermarkWidth * 0.7) / 2,
-      y: imageY + imageHeight / 2,
-      size: watermarkSize,
+    const qrImage = await pdfDoc.embedPng(qrBuffer);
+    
+    // Footer
+    const qrSize = 60;
+    const footerY = 15;
+    
+    page.drawRectangle({
+      x: 0,
+      y: footerY,
+      width: pageWidth,
+      height: footerHeight,
+      color: rgb(1, 1, 1),
+      opacity: 0.95,
+    });
+    
+    const qrX = 30;
+    page.drawImage(qrImage, {
+      x: qrX,
+      y: footerY + 10,
+      width: qrSize,
+      height: qrSize,
+    });
+    
+    const textX = qrX + qrSize + 15;
+    const textStartY = footerY + 55;
+    
+    page.drawText('BLOCKCHAIN VERIFIED CERTIFICATE', {
+      x: textX,
+      y: textStartY,
+      size: 10,
       font: boldFont,
-      color: rgb(0.85, 0.85, 0.85),
-      opacity: 0.4,
-      rotate: degrees(-45),
+      color: rgb(0.1, 0.3, 0.7),
+    });
+    
+    page.drawText(`Certificate No: ${certificateNumber}`, {
+      x: textX,
+      y: textStartY - 16,
+      size: 9,
+      font: font,
+      color: rgb(0, 0, 0),
+    });
+    
+    page.drawText('Upload this document to verify authenticity', {
+      x: textX,
+      y: textStartY - 30,
+      size: 7,
+      font: font,
+      color: rgb(0.4, 0.4, 0.4),
+    });
+    
+    page.drawLine({
+      start: { x: 20, y: footerY + footerHeight },
+      end: { x: pageWidth - 20, y: footerY + footerHeight },
+      thickness: 1,
+      color: rgb(0.8, 0.8, 0.8),
     });
     
     const pdfBytes = await pdfDoc.save();
     fs.writeFileSync(outputPath, pdfBytes);
     
-    console.log(`✓ Image converted to certified PDF: ${outputPath}`);
-    console.log(`✓ File size: ${fs.statSync(outputPath).size} bytes`);
+    console.log(`✓ Image converted to PDF with embedded QR: ${outputPath}`);
     return true;
   } catch (error) {
-    console.error('Error converting image to PDF:', error);
+    console.error('Image conversion error:', error);
     return false;
   }
 }
@@ -350,136 +347,97 @@ async function convertImageToPDF(inputPath, outputPath, certificateNumber, docum
 // Create certified text file
 function createCertifiedTextFile(inputPath, outputPath, certificateNumber, documentHash) {
   try {
-    console.log(`Creating certified text file: ${inputPath}`);
     const originalContent = fs.readFileSync(inputPath, 'utf8');
     const timestamp = new Date().toLocaleString();
+    const qrData = JSON.stringify({ cert: certificateNumber, hash: documentHash });
     
-    const certifiedContent = `
-${'═'.repeat(80)}
-                    BLOCKCHAIN CERTIFIED DOCUMENT
-${'═'.repeat(80)}
-
-CERTIFICATE NUMBER: ${certificateNumber}
-
-DOCUMENT HASH: ${documentHash}
-
-CERTIFICATION DATE: ${timestamp}
-
-VERIFICATION: http://localhost:3000
-
-STATUS: SECURED ON BLOCKCHAIN
+    const certifiedContent = `${originalContent}
 
 ${'═'.repeat(80)}
-
-ORIGINAL DOCUMENT CONTENT:
-${'─'.repeat(80)}
-
-${originalContent}
-
-${'─'.repeat(80)}
-
-${'═'.repeat(80)}
-END OF CERTIFIED DOCUMENT
+BLOCKCHAIN VERIFIED CERTIFICATE
 Certificate Number: ${certificateNumber}
-This document is secured on blockchain and can be verified at http://localhost:3000
+Document Hash: ${documentHash}
+Certified: ${timestamp}
+
+QR Data (for verification): ${qrData}
+
+Upload this file to verify at: http://localhost:${PORT}
 ${'═'.repeat(80)}
 `;
     
     fs.writeFileSync(outputPath, certifiedContent, 'utf8');
     console.log(`✓ Text file certified: ${outputPath}`);
-    console.log(`✓ File size: ${fs.statSync(outputPath).size} bytes`);
     return true;
   } catch (error) {
-    console.error('Error creating certified text file:', error);
+    console.error('Text file error:', error);
     return false;
   }
 }
 
-// Process document and add certificate
+// Process document
 async function processCertifiedDocument(inputPath, certificateNumber, documentHash, originalName) {
   const ext = path.extname(originalName).toLowerCase();
-  const baseName = path.basename(originalName, ext);
-  
-  // Clean filename - remove special characters
-  const cleanBaseName = baseName.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const baseName = path.basename(originalName, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
   
   let outputPath;
   let success = false;
   
   try {
     if (ext === '.pdf') {
-      const certifiedFileName = `${cleanBaseName}_CERTIFIED_${certificateNumber}.pdf`;
+      const certifiedFileName = `${baseName}_CERTIFIED_${certificateNumber}.pdf`;
       outputPath = path.join(certifiedDir, certifiedFileName);
-      success = await addCertificateToPDF(inputPath, outputPath, certificateNumber, documentHash);
+      success = await addMinimalCertificateToPDF(inputPath, outputPath, certificateNumber, documentHash);
     } 
     else if (ext === '.png' || ext === '.jpg' || ext === '.jpeg') {
-      const certifiedFileName = `${cleanBaseName}_CERTIFIED_${certificateNumber}.pdf`;
+      const certifiedFileName = `${baseName}_CERTIFIED_${certificateNumber}.pdf`;
       outputPath = path.join(certifiedDir, certifiedFileName);
       success = await convertImageToPDF(inputPath, outputPath, certificateNumber, documentHash);
     } 
     else if (ext === '.txt') {
-      const certifiedFileName = `${cleanBaseName}_CERTIFIED_${certificateNumber}.txt`;
+      const certifiedFileName = `${baseName}_CERTIFIED_${certificateNumber}.txt`;
       outputPath = path.join(certifiedDir, certifiedFileName);
       success = createCertifiedTextFile(inputPath, outputPath, certificateNumber, documentHash);
     }
     
-    if (success && outputPath) {
-      // Verify file was created
-      if (fs.existsSync(outputPath)) {
-        console.log(`✓ Certified file created successfully: ${outputPath}`);
-        console.log(`✓ File accessible: ${fs.statSync(outputPath).size} bytes`);
-      } else {
-        console.error(`✗ File not found after creation: ${outputPath}`);
-        return null;
-      }
+    if (success && outputPath && fs.existsSync(outputPath)) {
+      console.log(`✓ File created: ${outputPath}`);
+      return outputPath;
     }
     
-    return success ? outputPath : null;
+    return null;
   } catch (error) {
-    console.error('Error processing document:', error);
+    console.error('Processing error:', error);
     return null;
   }
 }
 
-// Direct download endpoint
-app.get('/api/download/:filename', (req, res) => {
+// Download endpoint
+app.get('/download/:filename', (req, res) => {
   try {
     const filename = req.params.filename;
     const filePath = path.join(certifiedDir, filename);
     
-    console.log(`Download request for: ${filename}`);
-    console.log(`Full path: ${filePath}`);
+    console.log(`Download request: ${filename}`);
     
     if (!fs.existsSync(filePath)) {
       console.error(`File not found: ${filePath}`);
-      return res.status(404).json({ error: 'File not found' });
+      return res.status(404).send('File not found');
     }
     
-    console.log(`✓ File found, sending: ${filename}`);
-    
-    // Set headers for download
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Type', 'application/pdf');
-    
-    // Send file
-    res.sendFile(filePath, (err) => {
+    res.download(filePath, filename, (err) => {
       if (err) {
-        console.error('Error sending file:', err);
-        if (!res.headersSent) {
-          res.status(500).json({ error: 'Error downloading file' });
-        }
+        console.error('Download error:', err);
       } else {
-        console.log(`✓ File sent successfully: ${filename}`);
+        console.log(`✓ Downloaded: ${filename}`);
       }
     });
-    
   } catch (error) {
     console.error('Download error:', error);
-    res.status(500).json({ error: 'Internal server error', details: error.message });
+    res.status(500).send('Server error');
   }
 });
 
-// Upload and register document
+// Upload endpoint
 app.post('/api/upload', upload.single('document'), async (req, res) => {
   let filePath = null;
   
@@ -491,77 +449,109 @@ app.post('/api/upload', upload.single('document'), async (req, res) => {
     filePath = req.file.path;
     const certificateNumber = generateCertificateNumber();
     
-    // Generate hash of ORIGINAL document (before adding certificate)
-    const documentHash = generateDocumentHash(filePath);
+    // Calculate hash of ORIGINAL document
+    const originalDocumentHash = generateDocumentHash(filePath);
     
-    console.log('Processing upload:', {
-      originalFile: req.file.originalname,
-      certificateNumber,
-      hash: documentHash.substring(0, 20) + '...'
-    });
+    console.log(`Upload: ${req.file.originalname} -> ${certificateNumber}`);
+    console.log(`Original hash: ${originalDocumentHash.substring(0, 20)}...`);
 
-    // Register on blockchain
-    const blockchainResult = await blockchainService.registerDocument(certificateNumber, documentHash);
+    // Register on blockchain with ORIGINAL hash
+    const blockchainResult = await blockchainService.registerDocument(certificateNumber, originalDocumentHash);
 
     if (!blockchainResult.success) {
-      if (filePath && fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
+      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
       return res.status(500).json({ 
-        error: 'Failed to register on blockchain', 
+        error: 'Blockchain registration failed', 
         details: blockchainResult.error 
       });
     }
 
-    console.log('✓ Registered on blockchain, processing document...');
-
-    // Process document and add certificate
+    // Process document (adds QR code with embedded metadata)
     const certifiedPath = await processCertifiedDocument(
       filePath, 
       certificateNumber, 
-      documentHash, 
+      originalDocumentHash,
       req.file.originalname
     );
 
     if (!certifiedPath) {
-      return res.status(500).json({ error: 'Failed to process document and add certificate' });
+      return res.status(500).json({ error: 'Document processing failed' });
     }
 
     const certifiedFileName = path.basename(certifiedPath);
-    
-    // Use direct download endpoint
-    const downloadUrl = `http://localhost:${PORT}/api/download/${encodeURIComponent(certifiedFileName)}`;
-
-    console.log(`✓ Upload complete. Download URL: ${downloadUrl}`);
+    const downloadUrl = `http://localhost:${PORT}/download/${certifiedFileName}`;
 
     res.json({
       success: true,
-      certificateNumber: certificateNumber,
-      documentHash: documentHash,
+      certificateNumber,
+      documentHash: originalDocumentHash,
       fileName: req.file.originalname,
-      certifiedFileName: certifiedFileName,
+      certifiedFileName,
       fileSize: req.file.size,
       txHash: blockchainResult.txHash,
-      downloadUrl: downloadUrl,
-      message: 'Document uploaded, certified with watermark, and registered on blockchain successfully'
+      downloadUrl,
+      qrData: JSON.stringify({ cert: certificateNumber, hash: originalDocumentHash }),
+      message: 'Document certified! QR data embedded in PDF. Simply upload the certified PDF to verify.'
     });
 
   } catch (error) {
     console.error('Upload error:', error);
-    
-    // Cleanup on error
-    if (filePath && fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-    
-    res.status(500).json({ 
-      error: 'Internal server error', 
-      details: error.message 
-    });
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    res.status(500).json({ error: 'Server error', details: error.message });
   }
 });
 
-// Verify document by uploading file
+// Verify by scanning QR code data manually
+app.post('/api/verify-qr', async (req, res) => {
+  try {
+    const { qrData } = req.body;
+    
+    if (!qrData) {
+      return res.status(400).json({ error: 'QR data is required' });
+    }
+    
+    let parsedData;
+    try {
+      parsedData = JSON.parse(qrData);
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid QR data format' });
+    }
+    
+    const { cert, hash } = parsedData;
+    
+    if (!cert || !hash) {
+      return res.status(400).json({ error: 'Invalid QR data: missing cert or hash' });
+    }
+
+    // Verify against blockchain
+    const result = await blockchainService.verifyDocument(cert, hash);
+    
+    if (!result.success) {
+      return res.status(500).json({ error: 'Verification failed', details: result.error });
+    }
+
+    const documentInfo = await blockchainService.getDocument(cert);
+
+    res.json({
+      success: true,
+      isValid: result.isValid,
+      certificateNumber: cert,
+      timestamp: result.timestamp,
+      registeredHash: documentInfo.documentHash,
+      scannedHash: hash,
+      registrationDate: new Date(result.timestamp * 1000).toLocaleString(),
+      message: result.isValid ? 
+        '✓ VALID - Certificate verified on blockchain' : 
+        '✗ INVALID - Certificate not found or has been tampered with'
+    });
+
+  } catch (error) {
+    console.error('QR verification error:', error);
+    res.status(500).json({ error: 'Server error', details: error.message });
+  }
+});
+
+// Verify by uploading CERTIFIED document (extracts QR automatically)
 app.post('/api/verify-upload', upload.single('document'), async (req, res) => {
   let filePath = null;
   
@@ -570,177 +560,113 @@ app.post('/api/verify-upload', upload.single('document'), async (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const { certificateNumber } = req.body;
-    
-    if (!certificateNumber) {
-      if (req.file.path && fs.existsSync(req.file.path)) {
-        fs.unlinkSync(req.file.path);
-      }
-      return res.status(400).json({ error: 'Certificate number is required' });
-    }
-
     filePath = req.file.path;
-    const documentHash = generateDocumentHash(filePath);
-    
+    const ext = path.extname(req.file.originalname).toLowerCase();
+
+    console.log(`Verify upload: ${req.file.originalname}`);
+
+    let qrData = null;
+
+    // Extract QR data based on file type
+    if (ext === '.pdf') {
+      qrData = await extractQRDataFromPDF(filePath);
+    } else if (ext === '.txt') {
+      // For text files, extract QR data from the footer
+      const content = fs.readFileSync(filePath, 'utf8');
+      const match = content.match(/QR Data \(for verification\): ({.*?})/);
+      if (match) {
+        qrData = match[1];
+      }
+    }
+
     // Clean up uploaded file
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
+    fs.unlinkSync(filePath);
 
-    const result = await blockchainService.verifyDocument(certificateNumber, documentHash);
-
-    if (!result.success) {
-      return res.status(500).json({ 
-        error: 'Verification failed', 
-        details: result.error 
-      });
-    }
-
-    const documentInfo = await blockchainService.getDocument(certificateNumber);
-
-    res.json({
-      success: true,
-      isValid: result.isValid,
-      certificateNumber: certificateNumber,
-      timestamp: result.timestamp,
-      registeredHash: documentInfo.documentHash,
-      providedHash: documentHash,
-      registrationDate: new Date(result.timestamp * 1000).toLocaleString(),
-      message: result.isValid ? 
-        '✓ Document is VALID and verified on blockchain' : 
-        '✗ Document verification FAILED - hash mismatch or certificate not found'
-    });
-
-  } catch (error) {
-    console.error('Verification error:', error);
-    
-    // Cleanup on error
-    if (filePath && fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-    
-    res.status(500).json({ 
-      error: 'Internal server error', 
-      details: error.message 
-    });
-  }
-});
-
-// Verify document by hash
-app.post('/api/verify', async (req, res) => {
-  try {
-    const { certificateNumber, documentHash } = req.body;
-
-    if (!certificateNumber || !documentHash) {
+    if (!qrData) {
       return res.status(400).json({ 
-        error: 'Certificate number and document hash are required' 
+        error: 'No certificate found in document',
+        message: 'This document does not appear to be a certified document. Please upload a certified document with QR code.'
       });
     }
 
-    const result = await blockchainService.verifyDocument(certificateNumber, documentHash);
+    console.log(`Extracted QR data: ${qrData.substring(0, 50)}...`);
 
+    // Parse QR data
+    let parsedData;
+    try {
+      parsedData = JSON.parse(qrData);
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid certificate data in document' });
+    }
+
+    const { cert, hash } = parsedData;
+
+    if (!cert || !hash) {
+      return res.status(400).json({ error: 'Invalid certificate: missing data' });
+    }
+
+    // Verify with blockchain
+    const result = await blockchainService.verifyDocument(cert, hash);
+    
     if (!result.success) {
-      return res.status(500).json({ 
-        error: 'Verification failed', 
-        details: result.error 
-      });
+      return res.status(500).json({ error: 'Verification failed', details: result.error });
     }
 
-    const documentInfo = await blockchainService.getDocument(certificateNumber);
+    const documentInfo = await blockchainService.getDocument(cert);
+
+    // Check if document has been tampered with
+    const isValid = result.isValid && (hash === documentInfo.documentHash);
 
     res.json({
       success: true,
-      isValid: result.isValid,
-      certificateNumber: certificateNumber,
+      isValid: isValid,
+      certificateNumber: cert,
       timestamp: result.timestamp,
       registeredHash: documentInfo.documentHash,
-      providedHash: documentHash,
+      extractedHash: hash,
       registrationDate: new Date(result.timestamp * 1000).toLocaleString(),
-      message: result.isValid ? 
-        '✓ Document is VALID and verified on blockchain' : 
-        '✗ Document verification FAILED - hash mismatch or certificate not found'
+      message: isValid ? 
+        '✓ VALID - Certificate is authentic and verified on blockchain' : 
+        '✗ INVALID - Certificate has been tampered with or is not authentic'
     });
 
   } catch (error) {
-    console.error('Verification error:', error);
-    res.status(500).json({ 
-      error: 'Internal server error', 
-      details: error.message 
-    });
+    console.error('Verify upload error:', error);
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    res.status(500).json({ error: 'Server error', details: error.message });
   }
 });
 
-// Get document details by certificate number
-app.get('/api/document/:certificateNumber', async (req, res) => {
-  try {
-    const { certificateNumber } = req.params;
-    const result = await blockchainService.getDocument(certificateNumber);
-
-    if (!result.success) {
-      return res.status(500).json({ 
-        error: 'Failed to retrieve document', 
-        details: result.error 
-      });
-    }
-
-    if (!result.exists) {
-      return res.status(404).json({ 
-        error: 'Document not found with this certificate number' 
-      });
-    }
-
-    res.json({
-      success: true,
-      certificateNumber: result.certificateNumber,
-      documentHash: result.documentHash,
-      timestamp: result.timestamp,
-      registrationDate: new Date(result.timestamp * 1000).toLocaleString()
-    });
-
-  } catch (error) {
-    console.error('Retrieval error:', error);
-    res.status(500).json({ 
-      error: 'Internal server error', 
-      details: error.message 
-    });
-  }
-});
-
-// Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'ok', 
-    message: 'Document verification service is running',
+    message: 'Service running',
     timestamp: new Date().toISOString()
   });
 });
 
-// Initialize blockchain service and start server
 async function startServer() {
-  console.log('Starting Document Verification Service...');
+  console.log('Starting service...');
   
   const initialized = await blockchainService.initialize();
   
   if (!initialized) {
-    console.error('❌ Failed to initialize blockchain service.');
-    console.error('Make sure:');
-    console.error('  1. Hardhat node is running (npx hardhat node)');
-    console.error('  2. Smart contract is deployed (npm run deploy)');
+    console.error('\n❌ Blockchain initialization failed!');
+    console.error('Please check:');
+    console.error('  1. Is Hardhat node running? (npx hardhat node)');
+    console.error('  2. Is contract deployed? (npm run deploy)\n');
     process.exit(1);
   }
 
   app.listen(PORT, () => {
-    console.log('');
+    console.log('\n' + '═'.repeat(60));
+    console.log('   📄 BLOCKCHAIN DOCUMENT VERIFICATION');
     console.log('═'.repeat(60));
-    console.log('   📄 DOCUMENT VERIFICATION SERVICE');
-    console.log('═'.repeat(60));
-    console.log(`✓ Server running on http://localhost:${PORT}`);
-    console.log('✓ Blockchain service connected and ready');
-    console.log('✓ Certificate watermarking enabled');
-    console.log(`✓ Upload directory: ${uploadsDir}`);
-    console.log(`✓ Certified directory: ${certifiedDir}`);
-    console.log('═'.repeat(60));
-    console.log('');
+    console.log(`✓ Server: http://localhost:${PORT}`);
+    console.log('✓ Blockchain: Connected');
+    console.log('✓ Auto QR Extraction: Enabled');
+    console.log('✓ Upload certified PDF to verify automatically');
+    console.log('═'.repeat(60) + '\n');
   });
 }
 

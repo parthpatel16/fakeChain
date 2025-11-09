@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document Verification - Blockchain</title>
+    <title>QR Document Verification</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -127,10 +127,6 @@
             display: inline-block;
         }
         
-        .btn-download:hover {
-            box-shadow: 0 5px 15px rgba(40, 167, 69, 0.4);
-        }
-        
         .result {
             margin-top: 20px;
             padding: 20px;
@@ -156,12 +152,6 @@
             line-height: 1.6;
         }
         
-        .result-item strong {
-            display: inline-block;
-            min-width: 180px;
-            color: #000;
-        }
-        
         .cert-number {
             background: #fff;
             padding: 15px;
@@ -173,16 +163,6 @@
             font-weight: bold;
             text-align: center;
             color: #28a745;
-        }
-        
-        .hash-value {
-            background: #f8f9fa;
-            padding: 10px;
-            border-radius: 5px;
-            font-family: 'Courier New', monospace;
-            font-size: 11px;
-            margin: 10px 0;
-            word-break: break-all;
         }
         
         .loading {
@@ -206,37 +186,6 @@
             100% { transform: rotate(360deg); }
         }
         
-        .tabs {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            border-bottom: 2px solid #e0e0e0;
-        }
-        
-        .tab {
-            padding: 10px 20px;
-            cursor: pointer;
-            border: none;
-            background: none;
-            color: #666;
-            font-weight: 500;
-            transition: all 0.3s;
-            border-bottom: 3px solid transparent;
-        }
-        
-        .tab.active {
-            color: #667eea;
-            border-bottom-color: #667eea;
-        }
-        
-        .tab-content {
-            display: none;
-        }
-        
-        .tab-content.active {
-            display: block;
-        }
-        
         .info-box {
             background: #e7f3ff;
             border-left: 4px solid #2196F3;
@@ -257,23 +206,16 @@
             margin: 5px 0;
         }
         
-        .badge {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-            margin-left: 10px;
+        .qr-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 4px;
         }
-        
-        .badge.valid {
-            background: #d4edda;
-            color: #155724;
-        }
-        
-        .badge.invalid {
-            background: #f8d7da;
-            color: #721c24;
+
+        .qr-box strong {
+            color: #856404;
         }
 
         .download-box {
@@ -285,43 +227,62 @@
             text-align: center;
         }
 
-        .qr-feature {
-            background: #fff3cd;
-            border-left: 4px solid #ffc107;
-            padding: 15px;
-            margin: 15px 0;
-            border-radius: 4px;
+        .highlight-box {
+            background: #e8f5e9;
+            border: 2px solid #4caf50;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
         }
 
-        .qr-feature strong {
-            color: #856404;
+        .highlight-box h3 {
+            color: #2e7d32;
+            margin-bottom: 10px;
+        }
+
+        .highlight-box ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .highlight-box li {
+            padding: 8px 0;
+            color: #1b5e20;
+        }
+
+        .highlight-box li:before {
+            content: "✓ ";
+            color: #4caf50;
+            font-weight: bold;
+            margin-right: 8px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📄 Blockchain Document Verification</h1>
+        <h1>📱 Smart Document Verification</h1>
         
         <!-- Upload Section -->
         <div class="card">
-            <h2>🔒 Upload & Certify Document</h2>
+            <h2>📤 Upload & Certify Document</h2>
             
             <div class="info-box">
                 <h3>How it works:</h3>
-                <p>1. Upload your document (PDF, Image, or Text)</p>
-                <p>2. System generates certificate number & hash</p>
-                <p>3. Creates QR code for instant verification</p>
-                <p>4. Stores on blockchain (immutable & tamper-proof)</p>
-                <p>5. Download certified document with QR code watermark</p>
+                <p>✓ Upload your document (PDF, Image, or Text)</p>
+                <p>✓ System generates certificate number and embeds QR code</p>
+                <p>✓ QR data is embedded in the document metadata</p>
+                <p>✓ Download certified document</p>
+                <p>✓ <strong>To verify: Just upload the certified document!</strong></p>
             </div>
 
-            <div class="qr-feature">
-                <strong>🔍 QR Code Feature:</strong> Each document gets a unique QR code. Scan it with any QR reader to instantly verify authenticity!
+            <div class="qr-box">
+                <strong>🎯 Simple Verification:</strong> No need to scan QR codes manually! 
+                Just upload the certified PDF and the system automatically reads the embedded certificate data.
             </div>
             
             <form id="uploadForm">
                 <div class="form-group">
-                    <label for="documentFile">Select Document (PDF, PNG, JPG, TXT):</label>
+                    <label for="documentFile">Select Document:</label>
                     <div class="file-input-wrapper">
                         <input type="file" id="documentFile" accept=".pdf,.png,.jpg,.jpeg,.txt" required>
                         <label for="documentFile" class="file-input-label">
@@ -330,11 +291,11 @@
                     </div>
                     <div class="file-name" id="fileName"></div>
                 </div>
-                <button type="submit" id="uploadBtn">Upload & Certify Document</button>
+                <button type="submit" id="uploadBtn">Certify Document</button>
                 
                 <div class="loading" id="uploadLoading">
                     <div class="spinner"></div>
-                    <p>Processing, generating QR code, and registering on blockchain...</p>
+                    <p>Generating certificate and embedding QR data...</p>
                 </div>
                 
                 <div class="result" id="uploadResult"></div>
@@ -343,73 +304,50 @@
         
         <!-- Verify Section -->
         <div class="card">
-            <h2>✅ Verify Document</h2>
+            <h2>✅ Verify Certified Document</h2>
             
-            <div class="tabs">
-                <button class="tab active" onclick="switchTab('hash')">Verify by Hash</button>
-                <button class="tab" onclick="switchTab('upload')">Verify by Upload</button>
+            <div class="highlight-box">
+                <h3>🚀 Super Simple Verification!</h3>
+                <ul>
+                    <li>Upload the certified PDF you downloaded</li>
+                    <li>System automatically extracts the certificate data</li>
+                    <li>Verifies against blockchain instantly</li>
+                    <li>No manual QR scanning needed!</li>
+                </ul>
             </div>
             
-            <!-- Verify by Hash -->
-            <div id="hashTab" class="tab-content active">
-                <div class="info-box">
-                    <h3>Verify using Certificate Number & Hash:</h3>
-                    <p>Enter certificate number and hash to verify on blockchain</p>
-                    <p><strong>⚠️ Important:</strong> If document is modified, hash changes and verification fails!</p>
-                </div>
-                
-                <form id="verifyForm">
-                    <div class="form-group">
-                        <label for="certNumber">Certificate Number:</label>
-                        <input type="text" id="certNumber" placeholder="CERT-12345678-9999" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="docHash">Document Hash:</label>
-                        <input type="text" id="docHash" placeholder="Enter document hash" required>
-                    </div>
-                    <button type="submit" id="verifyBtn">Verify Document</button>
-                    
-                    <div class="loading" id="verifyLoading">
-                        <div class="spinner"></div>
-                        <p>Verifying on blockchain...</p>
-                    </div>
-                    
-                    <div class="result" id="verifyResult"></div>
-                </form>
+            <div class="info-box">
+                <h3>What happens during verification:</h3>
+                <p>1. Upload your certified document</p>
+                <p>2. System reads embedded certificate data from PDF</p>
+                <p>3. Checks certificate against blockchain</p>
+                <p>4. Shows if document is authentic or tampered</p>
             </div>
             
-            <!-- Verify by Upload -->
-            <div id="uploadTab" class="tab-content">
-                <div class="info-box">
-                    <h3>Verify by uploading document:</h3>
-                    <p>Upload original document + certificate number to verify</p>
-                    <p><strong>⚠️ Note:</strong> Upload the ORIGINAL file (before certification)</p>
+            <form id="verifyUploadForm">
+                <div class="form-group">
+                    <label for="verifyDocumentFile">Upload Certified Document:</label>
+                    <div class="file-input-wrapper">
+                        <input type="file" id="verifyDocumentFile" accept=".pdf,.txt" required>
+                        <label for="verifyDocumentFile" class="file-input-label">
+                            📎 Click to select certified document
+                        </label>
+                    </div>
+                    <div class="file-name" id="verifyFileName"></div>
+                </div>
+                <button type="submit" id="verifyUploadBtn">Verify Document</button>
+                
+                <div class="loading" id="verifyUploadLoading">
+                    <div class="spinner"></div>
+                    <p>Reading certificate and verifying on blockchain...</p>
                 </div>
                 
-                <form id="verifyUploadForm">
-                    <div class="form-group">
-                        <label for="verifyCertNumber">Certificate Number:</label>
-                        <input type="text" id="verifyCertNumber" placeholder="CERT-12345678-9999" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="verifyDocumentFile">Upload Original Document:</label>
-                        <div class="file-input-wrapper">
-                            <input type="file" id="verifyDocumentFile" required>
-                            <label for="verifyDocumentFile" class="file-input-label">
-                                📎 Click to select file
-                            </label>
-                        </div>
-                        <div class="file-name" id="verifyFileName"></div>
-                    </div>
-                    <button type="submit" id="verifyUploadBtn">Verify Document</button>
-                    
-                    <div class="loading" id="verifyUploadLoading">
-                        <div class="spinner"></div>
-                        <p>Verifying on blockchain...</p>
-                    </div>
-                    
-                    <div class="result" id="verifyUploadResult"></div>
-                </form>
+                <div class="result" id="verifyUploadResult"></div>
+            </form>
+
+            <div class="qr-box" style="margin-top: 20px;">
+                <strong>💡 Pro Tip:</strong> If someone modifies the certified PDF in any way, 
+                the embedded certificate data will be corrupted and verification will fail!
             </div>
         </div>
     </div>
@@ -426,22 +364,6 @@
             const fileName = e.target.files[0]?.name || '';
             document.getElementById('verifyFileName').textContent = fileName ? `Selected: ${fileName}` : '';
         });
-
-        function switchTab(tab) {
-            const tabs = document.querySelectorAll('.tab');
-            const contents = document.querySelectorAll('.tab-content');
-            
-            tabs.forEach(t => t.classList.remove('active'));
-            contents.forEach(c => c.classList.remove('active'));
-            
-            if (tab === 'hash') {
-                tabs[0].classList.add('active');
-                document.getElementById('hashTab').classList.add('active');
-            } else {
-                tabs[1].classList.add('active');
-                document.getElementById('uploadTab').classList.add('active');
-            }
-        }
 
         // Upload Form
         document.getElementById('uploadForm').addEventListener('submit', async (e) => {
@@ -476,14 +398,12 @@
                     showResult(result, `
                         <div class="result-item"><strong>✓ Success!</strong> ${data.message}</div>
                         <div class="cert-number">🎫 ${data.certificateNumber}</div>
-                        <div class="result-item"><strong>Document Hash:</strong></div>
-                        <div class="hash-value">${data.documentHash}</div>
                         <div class="result-item"><strong>Original File:</strong> ${data.fileName}</div>
                         <div class="result-item"><strong>File Size:</strong> ${(data.fileSize / 1024).toFixed(2)} KB</div>
                         <div class="result-item"><strong>Blockchain TX:</strong> ${data.txHash}</div>
                         <div class="download-box">
                             <h3 style="color: #28a745; margin-bottom: 15px;">📥 Download Ready!</h3>
-                            <p style="margin-bottom: 15px;">Your document is certified with QR code watermark</p>
+                            <p style="margin-bottom: 15px;">Certificate data embedded in document</p>
                             <a href="${data.downloadUrl}" class="btn-download" download="${data.certifiedFileName}">
                                 📥 Download Certified Document
                             </a>
@@ -491,8 +411,12 @@
                                 File: ${data.certifiedFileName}
                             </p>
                         </div>
-                        <div class="qr-feature" style="margin-top: 15px;">
-                            <strong>📱 QR Code Included!</strong> The document contains a QR code. Scan it to verify instantly.
+                        <div class="qr-box" style="margin-top: 15px;">
+                            <strong>🔒 Security Features Added:</strong><br>
+                            • QR code embedded at bottom (60x60px)<br>
+                            • Certificate number visible<br>
+                            • Certificate data in PDF metadata<br>
+                            • <strong>To verify: Just upload this certified PDF!</strong>
                         </div>
                     `, 'success');
                     
@@ -509,65 +433,10 @@
             }
         });
 
-        // Verify by Hash
-        document.getElementById('verifyForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const certNumber = document.getElementById('certNumber').value.trim();
-            const docHash = document.getElementById('docHash').value.trim();
-            const verifyBtn = document.getElementById('verifyBtn');
-            const loading = document.getElementById('verifyLoading');
-            const result = document.getElementById('verifyResult');
-            
-            verifyBtn.disabled = true;
-            loading.style.display = 'block';
-            result.style.display = 'none';
-            
-            try {
-                const response = await fetch(`${API_URL}/verify`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        certificateNumber: certNumber,
-                        documentHash: docHash
-                    })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    const resultClass = data.isValid ? 'success' : 'error';
-                    const icon = data.isValid ? '✓' : '✗';
-                    const badge = data.isValid ? 
-                        '<span class="badge valid">VALID</span>' : 
-                        '<span class="badge invalid">INVALID</span>';
-                    
-                    showResult(result, `
-                        <div class="result-item"><strong>${icon} Verification:</strong>${badge}</div>
-                        <div class="result-item"><strong>${data.message}</strong></div>
-                        <div class="cert-number">${data.certificateNumber}</div>
-                        <div class="result-item"><strong>Registered Hash:</strong></div>
-                        <div class="hash-value">${data.registeredHash}</div>
-                        <div class="result-item"><strong>Provided Hash:</strong></div>
-                        <div class="hash-value">${data.providedHash}</div>
-                        <div class="result-item"><strong>Registration Date:</strong> ${data.registrationDate}</div>
-                    `, resultClass);
-                } else {
-                    showResult(result, `Error: ${data.error || 'Verification failed'}`, 'error');
-                }
-            } catch (error) {
-                showResult(result, `Error: ${error.message}`, 'error');
-            } finally {
-                verifyBtn.disabled = false;
-                loading.style.display = 'none';
-            }
-        });
-
-        // Verify by Upload
+        // Verify by Upload (Auto extracts QR)
         document.getElementById('verifyUploadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            const certNumber = document.getElementById('verifyCertNumber').value.trim();
             const fileInput = document.getElementById('verifyDocumentFile');
             const verifyBtn = document.getElementById('verifyUploadBtn');
             const loading = document.getElementById('verifyUploadLoading');
@@ -580,7 +449,6 @@
             
             const formData = new FormData();
             formData.append('document', fileInput.files[0]);
-            formData.append('certificateNumber', certNumber);
             
             verifyBtn.disabled = true;
             loading.style.display = 'block';
@@ -597,25 +465,22 @@
                 if (data.success) {
                     const resultClass = data.isValid ? 'success' : 'error';
                     const icon = data.isValid ? '✓' : '✗';
-                    const badge = data.isValid ? 
-                        '<span class="badge valid">VALID</span>' : 
-                        '<span class="badge invalid">INVALID</span>';
                     
                     showResult(result, `
-                        <div class="result-item"><strong>${icon} Verification:</strong>${badge}</div>
-                        <div class="result-item"><strong>${data.message}</strong></div>
+                        <h3 style="margin-bottom: 15px; font-size: 24px; text-align: center;">${icon} ${data.message}</h3>
                         <div class="cert-number">${data.certificateNumber}</div>
-                        <div class="result-item"><strong>Registered Hash:</strong></div>
-                        <div class="hash-value">${data.registeredHash}</div>
-                        <div class="result-item"><strong>Uploaded Hash:</strong></div>
-                        <div class="hash-value">${data.providedHash}</div>
                         <div class="result-item"><strong>Registration Date:</strong> ${data.registrationDate}</div>
+                        <div class="result-item"><strong>Blockchain Status:</strong> ${data.isValid ? 'Verified ✓' : 'Failed ✗'}</div>
+                        ${data.isValid ? 
+                            '<div class="highlight-box" style="margin-top: 20px;"><h3>✓ Document is Authentic</h3><ul><li>Certificate found and verified on blockchain</li><li>Document has not been tampered with</li><li>All security checks passed</li></ul></div>' : 
+                            '<div style="background: #ffebee; border: 2px solid #f44336; padding: 20px; border-radius: 8px; margin-top: 20px;"><h3 style="color: #c62828;">✗ Verification Failed</h3><p style="color: #b71c1c;">This document has been modified, is not authentic, or the certificate is invalid.</p></div>'
+                        }
                     `, resultClass);
                     
                     fileInput.value = '';
                     document.getElementById('verifyFileName').textContent = '';
                 } else {
-                    showResult(result, `Error: ${data.error || 'Verification failed'}`, 'error');
+                    showResult(result, `<h3>✗ ${data.error}</h3><p>${data.message || 'Verification failed'}</p>`, 'error');
                 }
             } catch (error) {
                 showResult(result, `Error: ${error.message}`, 'error');
